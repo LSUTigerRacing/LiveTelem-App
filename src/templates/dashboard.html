@@ -1,0 +1,779 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Telemetry Dashboard</title>
+<style>
+:root{--bg:#121417; --panel:#1b1e23; --line:#2c3139; --txt:#d9dce2; --mut:#8b919c; --acc:#c9c640}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--txt);
+  font:13px/1.3 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden}
+body{display:flex;flex-direction:column}
+
+/* top bar */
+#bar{height:44px;flex:none;display:flex;align-items:center;gap:10px;padding:0 12px;
+  background:#16181c;border-bottom:1px solid var(--line)}
+.brand{font-weight:700;letter-spacing:.3px;color:var(--acc)}
+#session{background:transparent;border:1px solid transparent;color:var(--txt);font:inherit;
+  padding:4px 8px;border-radius:5px;width:200px;text-align:center}
+#session:hover,#session:focus{border-color:var(--line);outline:none;background:#1d2025}
+.sp{flex:1}
+.pill{font-size:11px;padding:2px 9px;border-radius:999px;border:1px solid var(--line);color:var(--mut)}
+.pill.live{color:#8fe388;border-color:#2f5a2c}
+.pill.error{color:#ff8b7a;border-color:#6a2f28}
+.btn{background:#22262c;border:1px solid var(--line);color:var(--txt);font:inherit;
+  padding:5px 11px;border-radius:6px;cursor:pointer}
+.btn:hover{background:#2a2f37}
+.btn.save{background:var(--acc);border-color:var(--acc);color:#111;font-weight:600;min-width:74px;position:relative}
+.btn.save:hover{background:#d8d54f}
+.btn.save.dirty::after{content:"";position:absolute;top:-3px;right:-3px;width:9px;height:9px;border-radius:50%;
+  background:#ff6b4a;border:2px solid #16181c}
+.badge{display:none;background:var(--acc);color:#111;border-radius:999px;font-size:10px;
+  padding:0 6px;margin-left:4px;font-weight:700}
+.badge.on{display:inline-block}
+
+/* board */
+#board{position:relative;flex:1;overflow:auto}
+.panel{position:absolute;background:var(--panel);border:1px solid var(--line);border-radius:6px;
+  display:flex;flex-direction:column;box-shadow:0 2px 10px rgba(0,0,0,.35)}
+.panel[hidden]{display:none}
+.panel.drag{opacity:.93;box-shadow:0 10px 30px rgba(0,0,0,.65);outline:1px solid var(--acc)}
+.ph{height:30px;flex:none;display:flex;align-items:center;gap:2px;padding:0 4px;
+  cursor:grab;user-select:none;touch-action:none;border-bottom:1px solid #23272d}
+.ph:active{cursor:grabbing}
+.ph h3{flex:1;margin:0;text-align:center;font-size:13px;font-weight:500;pointer-events:none;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.grip{color:var(--mut);letter-spacing:-2px;padding:0 4px;font-size:12px;pointer-events:none}
+.ib{background:none;border:0;color:var(--mut);width:24px;height:24px;border-radius:4px;
+  cursor:pointer;font-size:13px;line-height:1;padding:0}
+.ib:hover{background:#2a2f37;color:var(--txt)}
+.pb{position:relative;flex:1;min-height:0}
+.pb canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.rz{position:absolute;right:1px;bottom:1px;width:16px;height:16px;cursor:nwse-resize;touch-action:none;
+  background:linear-gradient(135deg,transparent 52%,#5b616c 52%,#5b616c 60%,transparent 60%,transparent 74%,#5b616c 74%,#5b616c 82%,transparent 82%)}
+.legend{position:absolute;top:4px;right:8px;max-width:60%;background:rgba(20,22,26,.86);
+  border:1px solid var(--line);border-radius:6px;padding:4px 8px;font-size:11px;
+  max-height:calc(100% - 8px);overflow:auto}
+.li{display:flex;align-items:center;gap:6px;padding:1px 0;cursor:pointer;white-space:nowrap}
+.li i{width:8px;height:8px;border-radius:50%;flex:none}
+.li span{flex:1;overflow:hidden;text-overflow:ellipsis}
+.li b{font-weight:500;color:var(--mut);margin-left:8px;font-variant-numeric:tabular-nums}
+.li.off{opacity:.38;text-decoration:line-through}
+
+/* tray */
+#tray{height:36px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px;
+  background:#16181c;border-top:1px solid var(--line);overflow-x:auto}
+#tray .lbl{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.6px;flex:none}
+#chips{display:flex;gap:6px}
+.chip{background:#22262c;border:1px solid var(--line);color:var(--txt);border-radius:999px;
+  padding:3px 12px;font:inherit;font-size:12px;cursor:pointer;white-space:nowrap}
+.chip:hover{border-color:var(--acc)}
+.chip::before{content:"▴ ";color:var(--acc)}
+.none{color:#5d636e;font-size:12px}
+
+/* popovers */
+.pop{position:fixed;z-index:99999;min-width:190px;background:#1f2328;border:1px solid #3a4049;
+  border-radius:8px;padding:6px;box-shadow:0 10px 30px rgba(0,0,0,.6)}
+.pop .row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:5px 6px}
+.pop .row label{color:var(--mut);font-size:12px}
+.pop select,.pop input[type=number]{background:#16181c;color:var(--txt);border:1px solid var(--line);
+  border-radius:5px;padding:3px 6px;font:inherit;width:90px}
+.pop button.item{display:block;width:100%;text-align:left;background:none;border:0;color:var(--txt);
+  font:inherit;padding:6px 8px;border-radius:5px;cursor:pointer}
+.pop button.item:hover{background:#2a2f37}
+.pop .empty{color:var(--mut);padding:6px 8px}
+</style>
+</head>
+<body>
+
+<header id="bar">
+  <div class="brand">TELEMETRY</div>
+  <input id="session" value="Training Session 1" spellcheck="false" title="Session name">
+  <span id="status" class="pill">idle</span>
+  <div class="sp"></div>
+  <button id="btnAdd" class="btn">＋ Add panel<span id="badge" class="badge"></span></button>
+  <button id="btnImport" class="btn" title="Load recorded telemetry from a JSON file">Import</button>
+  <button id="btnLive" class="btn" title="Discard imported data and resume live polling" hidden>Back to live</button>
+  <input id="fileImport" type="file" accept=".json,.ndjson,application/json" hidden>
+  <button id="btnPause" class="btn">Pause</button>
+  <button id="btnFit" class="btn" title="Re-tile all panels to fit the window">Fit grid</button>
+  <button id="btnReset" class="btn" title="Restore default layout and reopen all default panels">Reset layout</button>
+  <button id="btnSave" class="btn save" title="Save layout (Ctrl/Cmd+S)">Save</button>
+</header>
+
+<main id="board"></main>
+
+<footer id="tray">
+  <span class="lbl">Minimized</span>
+  <div id="chips"></div>
+</footer>
+
+<script>
+'use strict';
+
+
+const CONFIG = {
+  url: '/api/telemetry',
+  pollMs: 100,
+  windowSec: 60,        // default visible time window for charts
+  maxPoints: 30000,     // per-key buffer
+  grid: 10,             // drag/resize snap (px)
+  storageKey: 'dash.layout.v2',
+};
+
+// GPS keys used by the track map
+const TRACK_KEYS = { lat: 'gps_lat', lon: 'gps_lon', speed: 'speed' };
+
+// Computed channels
+const DERIVED = {
+  rad_delta: s => s.rad_in - s.rad_out,
+};
+
+/* ======================================================================
+   PANEL DEFINITIONS  —  layout is on a 12x12 grid.
+   type: 'chart' (mode 'lanes' = stacked, 'overlay' = shared axis)
+         'gauge'  |  'track'
+   ====================================================================== */
+const PALETTE = ['#f6e58d', '#f2b24a', '#ee6a47', '#d8429b', '#f3a6d2', '#7fd0ff'];
+
+const PANELS = [
+  { id: 'motor', title: 'Motor', type: 'chart', mode: 'lanes',
+    layout: { x: 0, y: 0, w: 4, h: 6 },
+    series: [
+      { key: 'motor_power',   label: 'power',      unit: 'W' },
+      { key: 'motor_torque',  label: 'torque',     unit: 'Nm' },
+      { key: 'motor_rpm',     label: 'rpm',        unit: '' },
+      { key: 'motor_temp',    label: 'motor temp', unit: '°C' },
+      { key: 'inverter_temp', label: 'inverter',   unit: '°C' },
+    ] },
+
+  { id: 'speed', title: 'Speed', type: 'gauge', key: 'speed', unit: 'km/h', min: 0, max: 150, dec: 1,
+    layout: { x: 4, y: 0, w: 2, h: 3 } },
+
+  { id: 'throttle', title: 'Throttle', type: 'gauge', key: 'throttle', unit: '%', min: 0, max: 100, dec: 0,
+    layout: { x: 6, y: 0, w: 2, h: 3 } },
+
+  { id: 'velocity', title: 'Velocity', type: 'chart', mode: 'overlay',
+    layout: { x: 8, y: 0, w: 4, h: 3 },
+    series: [
+      { key: 'speed',     label: 'wheel speed', unit: 'km/h' },
+      { key: 'gps_speed', label: 'gps speed',   unit: 'km/h' },
+    ] },
+
+  { id: 'suspension', title: 'Suspension (lin pots)', type: 'chart', mode: 'lanes',
+    layout: { x: 4, y: 3, w: 4, h: 3 },
+    series: [
+      { key: 'linpot_fl', label: 'FL', unit: 'mm' },
+      { key: 'linpot_fr', label: 'FR', unit: 'mm' },
+      { key: 'linpot_rl', label: 'RL', unit: 'mm' },
+      { key: 'linpot_rr', label: 'RR', unit: 'mm' },
+    ] },
+
+  { id: 'tires', title: 'Tire temperatures', type: 'chart', mode: 'overlay',
+    layout: { x: 8, y: 3, w: 4, h: 3 },
+    series: [
+      { key: 'tire_fl', label: 'FL', unit: '°C' },
+      { key: 'tire_fr', label: 'FR', unit: '°C' },
+      { key: 'tire_rl', label: 'RL', unit: '°C' },
+      { key: 'tire_rr', label: 'RR', unit: '°C' },
+    ] },
+
+  { id: 'track', title: 'Track', type: 'track',
+    layout: { x: 0, y: 6, w: 4, h: 6 } },
+
+  { id: 'driving', title: 'Driving', type: 'chart', mode: 'lanes',
+    layout: { x: 4, y: 6, w: 4, h: 3 },
+    series: [
+      { key: 'throttle', label: 'throttle', unit: '%',  min: 0, max: 100 },
+      { key: 'brake',    label: 'brake',    unit: '%',  min: 0, max: 100 },
+      { key: 'steer',    label: 'steer',    unit: '°' },
+    ] },
+
+  { id: 'accel', title: 'Acceleration (IMU)', type: 'chart', mode: 'overlay',
+    layout: { x: 8, y: 6, w: 4, h: 3 },
+    series: [
+      { key: 'ax', label: 'ax', unit: 'g' },
+      { key: 'ay', label: 'ay', unit: 'g' },
+      { key: 'az', label: 'az', unit: 'g' },
+    ] },
+
+  { id: 'cooling', title: 'Cooling', type: 'chart', mode: 'lanes',
+    layout: { x: 4, y: 9, w: 4, h: 3 },
+    series: [
+      { key: 'rad_in',    label: 'radiator in',  unit: '°C' },
+      { key: 'rad_out',   label: 'radiator out', unit: '°C' },
+      { key: 'rad_delta', label: 'ΔT',           unit: '°C' },
+      { key: 'flow_rate', label: 'flow rate',    unit: 'L/min' },
+    ] },
+
+  { id: 'rotors', title: 'Rotor temperatures', type: 'chart', mode: 'overlay',
+    layout: { x: 8, y: 9, w: 4, h: 3 },
+    series: [
+      { key: 'rotor_fl', label: 'FL', unit: '°C' },
+      { key: 'rotor_fr', label: 'FR', unit: '°C' },
+      { key: 'rotor_rl', label: 'RL', unit: '°C' },
+      { key: 'rotor_rr', label: 'RR', unit: '°C' },
+    ] },
+
+  // starts closed — shows up under "Add panel"
+  { id: 'gyro', title: 'Gyro (IMU)', type: 'chart', mode: 'overlay', closed: true,
+    layout: { x: 8, y: 6, w: 4, h: 3 },
+    series: [
+      { key: 'gx', label: 'roll rate',  unit: '°/s' },
+      { key: 'gy', label: 'pitch rate', unit: '°/s' },
+      { key: 'gz', label: 'yaw rate',   unit: '°/s' },
+    ] },
+];
+
+/* ======================================================================
+   helpers
+   ====================================================================== */
+const $ = (s, r = document) => r.querySelector(s);
+const mk = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const snap = v => Math.round(v / CONFIG.grid) * CONFIG.grid;
+const colorOf = (s, i) => s.color || PALETTE[i % PALETTE.length];
+const MUT = '#8b919c', GRID = 'rgba(255,255,255,0.07)', ACC = '#c9c640';
+
+function fmt(v) {
+  if (v == null || !isFinite(v)) return '–';
+  const a = Math.abs(v);
+  if (a >= 1e6) return (v / 1e6).toFixed(1) + 'M';
+  if (a >= 1e4) return (v / 1e3).toFixed(1) + 'k';
+  if (a >= 100) return v.toFixed(0);
+  if (a >= 10) return v.toFixed(1);
+  return v.toFixed(2);
+}
+function niceTicks(lo, hi, n) {
+  const span = hi - lo; if (!(span > 0)) return [lo];
+  const raw = span / Math.max(1, n), mag = Math.pow(10, Math.floor(Math.log10(raw))), r = raw / mag;
+  const step = (r < 1.5 ? 1 : r < 3 ? 2 : r < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step) * step; v <= hi + step * 1e-6; v += step) out.push(+v.toFixed(12));
+  return out;
+}
+function lowerBound(arr, x) { let lo = 0, hi = arr.length; while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m] < x) lo = m + 1; else hi = m; } return lo; }
+function lerpColor(a, b, t) {
+  const p = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
+  const A = p(a), B = p(b);
+  return 'rgb(' + A.map((v, i) => Math.round(v + (B[i] - v) * t)).join(',') + ')';
+}
+
+/* ======================================================================
+   data store
+   ====================================================================== */
+const store = {};     // key -> { t: [], v: [] }
+const latest = {};    // key -> last value
+let tNow = 0, frozenT = 0, paused = false, epoch0 = null, gDirty = true;
+const startWall = Date.now();
+const viewT = () => paused ? frozenT : tNow;
+
+function record(k, v, t) {
+  if (typeof v !== 'number' || !isFinite(v)) return;
+  latest[k] = v;
+  const s = store[k] || (store[k] = { t: [], v: [] });
+  s.t.push(t); s.v.push(v);
+  if (s.t.length > CONFIG.maxPoints * 1.2) { s.t.splice(0, s.t.length - CONFIG.maxPoints); s.v.splice(0, s.v.length - CONFIG.maxPoints); }
+}
+
+function push(sample) {
+  if (!sample) return;
+  if (Array.isArray(sample)) return sample.forEach(push);
+  if (Array.isArray(sample.samples)) return sample.samples.forEach(push);
+
+  let t = sample.t;
+  if (typeof t !== 'number' || !isFinite(t)) t = (Date.now() - startWall) / 1000;
+  else {
+    if (t > 1e11) t /= 1000;                                         // ms epoch -> s
+    if (t > 1e8) { if (epoch0 == null) epoch0 = t; t -= epoch0; }    // s epoch -> relative
+  }
+
+  for (const k in sample) if (k !== 't') record(k, sample[k], t);
+  for (const k in DERIVED) record(k, DERIVED[k](latest), t);
+  if (t > tNow) tNow = t;
+
+  const la = sample[TRACK_KEYS.lat], lo = sample[TRACK_KEYS.lon];
+  if (typeof la === 'number' && typeof lo === 'number') trackAdd(la, lo, latest[TRACK_KEYS.speed]);
+  gDirty = true;
+}
+
+/* ======================================================================
+   track state (GPS)
+   ====================================================================== */
+const track = { pts: [], lat0: null, lon0: null, vmax: 1 };
+function grow([x, y]) {
+  track.minx = Math.min(track.minx, x); track.maxx = Math.max(track.maxx, x);
+  track.miny = Math.min(track.miny, y); track.maxy = Math.max(track.maxy, y);
+}
+function trackBounds() {
+  Object.assign(track, { minx: Infinity, maxx: -Infinity, miny: Infinity, maxy: -Infinity });
+  track.pts.forEach(grow);
+}
+function trackAdd(lat, lon, v) {
+  if (track.lat0 == null) { track.lat0 = lat; track.lon0 = lon; }
+  const x = (lon - track.lon0) * Math.cos(track.lat0 * Math.PI / 180), y = lat - track.lat0;
+  const l = track.pts[track.pts.length - 1];
+  if (l && l[0] === x && l[1] === y) return;
+  const pt = [x, y, v || 0];
+  track.pts.push(pt); grow(pt);
+  if (v > track.vmax) track.vmax = v;
+  if (track.pts.length > 20000) { track.pts.splice(0, 5000); trackBounds(); }
+}
+function trackClear() { track.pts = []; track.vmax = 1; trackBounds(); gDirty = true; }
+trackBounds();
+
+function clearData() {
+  for (const k in store) delete store[k];
+  for (const k in latest) delete latest[k];
+  tNow = frozenT = 0; epoch0 = null;
+  track.lat0 = track.lon0 = null; trackClear();
+}
+
+/* ======================================================================
+   drawing
+   ====================================================================== */
+function visRange(key, t0, t1) {
+  const s = store[key]; if (!s || !s.t.length) return null;
+  const i0 = Math.max(0, lowerBound(s.t, t0) - 1), i1 = lowerBound(s.t, t1 + 1e-6);
+  if (i1 - i0 < 1) return null;
+  let mn = Infinity, mx = -Infinity;
+  for (let i = i0; i < i1; i++) { const v = s.v[i]; if (v < mn) mn = v; if (v > mx) mx = v; }
+  return { s, i0, i1, mn, mx };
+}
+function plotLine(ctx, r, t0, t1, x0, w, y0, h, lo, hi, color) {
+  const { s, i0, i1 } = r, n = i1 - i0, sx = w / (t1 - t0), sy = h / (hi - lo);
+  const X = t => x0 + (t - t0) * sx, Y = v => y0 + h - (v - lo) * sy;
+  const bucket = Math.max(1, Math.floor(n / (w * 1.5)));
+  ctx.beginPath();
+  if (bucket === 1) {
+    for (let i = i0; i < i1; i++) i === i0 ? ctx.moveTo(X(s.t[i]), Y(s.v[i])) : ctx.lineTo(X(s.t[i]), Y(s.v[i]));
+  } else {
+    // min/max decimation: one vertical stroke per bucket
+    for (let i = i0; i < i1; i += bucket) {
+      let mn = Infinity, mx = -Infinity, e = Math.min(i1, i + bucket);
+      for (let j = i; j < e; j++) { const v = s.v[j]; if (v < mn) mn = v; if (v > mx) mx = v; }
+      const x = X(s.t[i]);
+      i === i0 ? ctx.moveTo(x, Y(mn)) : ctx.lineTo(x, Y(mn));
+      ctx.lineTo(x, Y(mx));
+    }
+  }
+  ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.lineJoin = 'round'; ctx.stroke();
+}
+function domain(r, s) {
+  let lo = s.min ?? r.mn, hi = s.max ?? r.mx;
+  const pad = (hi - lo) * 0.08 || Math.abs(hi) * 0.05 || 1;
+  if (s.min == null) lo -= pad;
+  if (s.max == null) hi += pad;
+  return [lo, hi];
+}
+
+function drawChart(p) {
+  const { ctx, W, H, def, opts } = p;
+  ctx.clearRect(0, 0, W, H);
+  const padL = 50, padR = 10, padT = 8, padB = 24;
+  const x0 = padL, pw = W - padL - padR, y0 = padT, ph = H - padT - padB;
+  if (pw < 30 || ph < 20) return;
+  const t1 = viewT(), t0 = t1 - opts.windowSec;
+  ctx.font = '11px system-ui,sans-serif';
+
+  // x grid + labels
+  ctx.strokeStyle = GRID; ctx.fillStyle = MUT; ctx.lineWidth = 1; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  for (const t of niceTicks(t0, t1, Math.max(2, Math.floor(pw / 80)))) {
+    const x = Math.round(x0 + (t - t0) / (t1 - t0) * pw) + .5;
+    ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, y0 + ph); ctx.stroke();
+    ctx.fillText(String(+t.toFixed(1)), x, y0 + ph + 6);
+  }
+  ctx.beginPath(); ctx.rect(x0, y0, pw, ph); ctx.strokeStyle = 'rgba(255,255,255,.12)'; ctx.stroke();
+
+  const vis = def.series
+    .map((s, i) => ({ s, color: colorOf(s, i), r: visRange(s.key, t0, t1) }))
+    .filter(o => !p.hidden.has(o.s.key));
+  if (!vis.some(o => o.r)) {
+    ctx.fillStyle = '#5d636e'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('Waiting for data…', x0 + pw / 2, y0 + ph / 2); return;
+  }
+
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  if (def.mode === 'lanes') {
+    const laneH = ph / vis.length;
+    vis.forEach(({ s, color, r }, k) => {
+      if (!r) return;
+      const ly = y0 + k * laneH + 3, lh = laneH - 6, [lo, hi] = domain(r, s);
+      ctx.save(); ctx.beginPath(); ctx.rect(x0, ly, pw, lh); ctx.clip();
+      plotLine(ctx, r, t0, t1, x0, pw, ly, lh, lo, hi, color);
+      ctx.restore();
+      ctx.fillStyle = MUT; ctx.strokeStyle = GRID;
+      ctx.fillText(fmt(lo), x0 - 6, ly + lh - 6);
+      ctx.fillText(fmt(hi), x0 - 6, ly + 6);
+      ctx.beginPath(); ctx.moveTo(x0, ly + lh + 3); ctx.lineTo(x0 + pw, ly + lh + 3); ctx.stroke();
+    });
+  } else {
+    let lo = Infinity, hi = -Infinity;
+    for (const { s, r } of vis) if (r) { const d = domain(r, s); lo = Math.min(lo, d[0]); hi = Math.max(hi, d[1]); }
+    ctx.fillStyle = MUT; ctx.strokeStyle = GRID;
+    for (const v of niceTicks(lo, hi, Math.max(2, Math.floor(ph / 40)))) {
+      const y = Math.round(y0 + ph - (v - lo) / (hi - lo) * ph) + .5;
+      ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x0 + pw, y); ctx.stroke();
+      ctx.fillText(fmt(v), x0 - 6, y);
+    }
+    ctx.save(); ctx.beginPath(); ctx.rect(x0, y0, pw, ph); ctx.clip();
+    for (const { color, r } of vis) if (r) plotLine(ctx, r, t0, t1, x0, pw, y0, ph, lo, hi, color);
+    ctx.restore();
+  }
+}
+
+function drawGauge(p) {
+  const { ctx, W, H, def, opts } = p;
+  ctx.clearRect(0, 0, W, H);
+  const cx = W / 2, cy = H * 0.56, r = Math.min(W / 2, H * 0.58) - 16;
+  if (r < 24) return;
+  const a0 = Math.PI * 0.75, a1 = Math.PI * 2.25, lw = Math.max(6, r * 0.14);
+  const v = latest[def.key], f = v == null ? 0 : clamp((v - opts.min) / (opts.max - opts.min || 1), 0, 1);
+  ctx.lineCap = 'round'; ctx.lineWidth = lw;
+  ctx.strokeStyle = '#2a2e35'; ctx.beginPath(); ctx.arc(cx, cy, r, a0, a1); ctx.stroke();
+  if (f > 0) { ctx.strokeStyle = ACC; ctx.beginPath(); ctx.arc(cx, cy, r, a0, a0 + f * (a1 - a0)); ctx.stroke(); }
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#e8eaee'; ctx.font = '600 ' + Math.round(r * 0.46) + 'px system-ui,sans-serif';
+  ctx.fillText(v == null ? '–' : v.toFixed(def.dec ?? 1), cx, cy - r * 0.05);
+  ctx.fillStyle = MUT; ctx.font = Math.round(r * 0.2) + 'px system-ui,sans-serif';
+  ctx.fillText(def.unit || '', cx, cy + r * 0.32);
+  ctx.font = '10px system-ui,sans-serif';
+  ctx.fillText(String(opts.min), cx + Math.cos(a0) * r, cy + Math.sin(a0) * r + lw * 0.9);
+  ctx.fillText(String(opts.max), cx + Math.cos(a1) * r, cy + Math.sin(a1) * r + lw * 0.9);
+}
+
+function drawTrack(p) {
+  const { ctx, W, H, opts } = p, pts = track.pts;
+  ctx.clearRect(0, 0, W, H);
+  if (!pts.length) {
+    ctx.fillStyle = '#5d636e'; ctx.font = '12px system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('Waiting for GPS…', W / 2, H / 2); return;
+  }
+  const pad = 26, bw = (track.maxx - track.minx) || 1e-9, bh = (track.maxy - track.miny) || 1e-9;
+  const sc = Math.min((W - pad * 2) / bw, (H - pad * 2) / bh);
+  const ox = (W - bw * sc) / 2 - track.minx * sc, oy = (H + bh * sc) / 2 + track.miny * sc;
+  const X = x => ox + x * sc, Y = y => oy - y * sc;
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+
+  // trail, split into strokes whenever the speed color bucket changes
+  if (pts.length > 1) {
+    ctx.lineWidth = 3;
+    const bucketOf = q => opts.colorBySpeed ? Math.min(15, Math.floor(q[2] / track.vmax * 16)) : 0;
+    const stroke = b => { ctx.strokeStyle = lerpColor('#f6e58d', '#d8429b', b / 15); ctx.stroke(); };
+    let b = bucketOf(pts[1]);
+    ctx.beginPath(); ctx.moveTo(X(pts[0][0]), Y(pts[0][1]));
+    for (let i = 1; i < pts.length; i++) {
+      const nb = bucketOf(pts[i]);
+      if (nb !== b) { stroke(b); ctx.beginPath(); ctx.moveTo(X(pts[i - 1][0]), Y(pts[i - 1][1])); b = nb; }
+      ctx.lineTo(X(pts[i][0]), Y(pts[i][1]));
+    }
+    stroke(b);
+  }
+  const q = pts[pts.length - 1];
+  ctx.fillStyle = 'rgba(201,198,64,.25)'; ctx.beginPath(); ctx.arc(X(q[0]), Y(q[1]), 10, 0, 7); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(X(q[0]), Y(q[1]), 4, 0, 7); ctx.fill();
+
+  // north marker
+  ctx.fillStyle = MUT; ctx.font = '11px system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.fillText('N', 18, 8);
+  ctx.strokeStyle = MUT; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(18, 34); ctx.lineTo(18, 22); ctx.lineTo(14, 27); ctx.moveTo(18, 22); ctx.lineTo(22, 27); ctx.stroke();
+}
+
+const DRAW = { chart: drawChart, gauge: drawGauge, track: drawTrack };
+
+/* ======================================================================
+   panels (DOM, drag, resize, minimize, close)
+   ====================================================================== */
+const board = $('#board');
+const panels = new Map();
+let zTop = 10;
+
+function defaultRect(def) {
+  const bw = Math.max(board.clientWidth, 600), bh = Math.max(board.clientHeight, 420);
+  const cw = bw / 12, rh = bh / 12, g = 4, L = def.layout;
+  return { x: Math.round(L.x * cw + g), y: Math.round(L.y * rh + g), w: Math.round(L.w * cw - 2 * g), h: Math.round(L.h * rh - 2 * g) };
+}
+const defaultOpts = def => ({ windowSec: CONFIG.windowSec, min: def.min, max: def.max, colorBySpeed: true });
+const defaultState = def => def.closed ? 'closed' : 'open';
+
+function applyRect(p) {
+  const s = p.el.style, r = p.rect;
+  s.left = r.x + 'px'; s.top = r.y + 'px'; s.width = r.w + 'px'; s.height = r.h + 'px';
+}
+function resetRect(p) { p.rect = defaultRect(p.def); applyRect(p); }
+function bringFront(p) { p.z = ++zTop; p.el.style.zIndex = p.z; }
+
+// Layout changes only mark the layout "unsaved"; the Save button (or Ctrl/Cmd+S) commits it.
+let dirty = false, fitMode = true;
+function markDirty() { dirty = true; $('#btnSave').classList.add('dirty'); }
+
+function commitSave() {
+  const o = {};
+  panels.forEach((p, id) => { o[id] = { ...p.rect, state: p.state, z: p.z, opts: p.opts, hidden: [...p.hidden] }; });
+  const data = { session: $('#session').value, fit: fitMode, panels: o };
+  let ok = true;
+  try { localStorage.setItem(CONFIG.storageKey, JSON.stringify(data)); } catch (e) { ok = false; }
+  dirty = false;
+  const b = $('#btnSave');
+  b.classList.remove('dirty');
+  b.textContent = ok ? 'Saved ✓' : 'Save failed';
+  setTimeout(() => { b.textContent = 'Save'; }, 1400);
+}
+
+// Tile the open panels into the default 12x12 grid sized to the current window
+function fitGrid() {
+  fitMode = true;
+  panels.forEach(resetRect);
+  board.scrollTo(0, 0); markDirty();
+}
+
+function applyState(p, state) {
+  p.state = state;
+  p.el.hidden = state !== 'open';
+  if (state === 'open') { bringFront(p); p.dirty = true; }
+}
+function setState(p, state) { applyState(p, state); renderChrome(); markDirty(); }
+
+// Drag `handle` to edit p.rect; onMove(startRect, dx, dy) mutates p.rect.
+function dragWith(handle, p, onMove) {
+  handle.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || e.target.closest('button')) return;
+    handle.setPointerCapture(e.pointerId); p.el.classList.add('drag');
+    const sx = e.clientX, sy = e.clientY, r0 = { ...p.rect };
+    handle.onpointermove = ev => { fitMode = false; onMove(r0, ev.clientX - sx, ev.clientY - sy); applyRect(p); };
+    handle.onpointerup = handle.onpointercancel = () => {
+      handle.onpointermove = handle.onpointerup = handle.onpointercancel = null;
+      p.el.classList.remove('drag'); markDirty();
+    };
+  });
+}
+
+function createPanel(def, saved) {
+  const el = mk('section', 'panel');
+  el.innerHTML =
+    '<header class="ph"><span class="grip">⋮⋮</span>' +
+    '<button class="ib b-min" title="Minimize">▾</button>' +
+    '<button class="ib b-gear" title="Settings">⚙</button>' +
+    '<h3></h3>' +
+    '<button class="ib b-close" title="Close">✕</button></header>' +
+    '<div class="pb"><canvas></canvas><div class="legend"></div></div><i class="rz"></i>';
+  $('h3', el).textContent = def.title;
+
+  const p = {
+    def, el, canvas: $('canvas', el), W: 1, H: 1, dirty: true,
+    state: saved?.state ?? defaultState(def),
+    rect: saved ? { x: saved.x, y: saved.y, w: saved.w, h: saved.h } : defaultRect(def),
+    hidden: new Set(saved?.hidden),
+    opts: { ...defaultOpts(def), ...saved?.opts },
+    z: saved?.z || 0, rows: [],
+  };
+  p.ctx = p.canvas.getContext('2d');
+  panels.set(def.id, p);
+  board.appendChild(el);
+  applyRect(p);
+  if (p.z) { zTop = Math.max(zTop, p.z); el.style.zIndex = p.z; }
+  el.hidden = p.state !== 'open';
+
+  // legend (click a row to hide/show a series)
+  const legend = $('.legend', el);
+  if (def.type === 'chart') {
+    def.series.forEach((s, i) => {
+      const row = mk('div', 'li', '<i></i><span></span><b></b>');
+      $('i', row).style.background = colorOf(s, i);
+      $('span', row).textContent = s.label;
+      row.title = 'Click to show/hide';
+      row.classList.toggle('off', p.hidden.has(s.key));
+      row.onclick = () => { p.hidden.has(s.key) ? p.hidden.delete(s.key) : p.hidden.add(s.key); row.classList.toggle('off'); p.dirty = true; markDirty(); };
+      legend.appendChild(row); p.rows.push(row);
+    });
+  } else legend.remove();
+
+  // canvas sizing
+  const body = $('.pb', el);
+  new ResizeObserver(() => {
+    const r = body.getBoundingClientRect(), d = window.devicePixelRatio || 1;
+    p.W = Math.max(1, Math.floor(r.width)); p.H = Math.max(1, Math.floor(r.height));
+    p.canvas.width = p.W * d; p.canvas.height = p.H * d; p.ctx.setTransform(d, 0, 0, d, 0, 0); p.dirty = true;
+  }).observe(body);
+
+  $('.b-min', el).onclick = () => setState(p, 'min');
+  $('.b-close', el).onclick = () => setState(p, 'closed');
+  $('.b-gear', el).onclick = e => openSettings(p, e.currentTarget);
+  el.addEventListener('pointerdown', () => bringFront(p));
+
+  dragWith($('.ph', el), p, (r0, dx, dy) => { p.rect.x = Math.max(0, snap(r0.x + dx)); p.rect.y = Math.max(0, snap(r0.y + dy)); });
+  dragWith($('.rz', el), p, (r0, dx, dy) => { p.rect.w = Math.max(160, snap(r0.w + dx)); p.rect.h = Math.max(110, snap(r0.h + dy)); });
+}
+
+/* ---------- tray, badge, popovers ---------- */
+function renderChrome() {
+  const chips = $('#chips'), badge = $('#badge');
+  chips.innerHTML = '';
+  let closed = 0;
+  panels.forEach(p => {
+    if (p.state === 'closed') closed++;
+    if (p.state !== 'min') return;
+    const b = mk('button', 'chip'); b.textContent = p.def.title; b.title = 'Restore';
+    b.onclick = () => setState(p, 'open'); chips.appendChild(b);
+  });
+  if (!chips.children.length) chips.appendChild(mk('span', 'none', 'nothing minimized'));
+  badge.textContent = closed; badge.classList.toggle('on', closed > 0);
+}
+
+let popEl = null;
+function closePop() { if (popEl) { popEl.remove(); popEl = null; } }
+function showPop(anchor, build) {
+  closePop();
+  const m = popEl = mk('div', 'pop'); build(m); document.body.appendChild(m);
+  const r = anchor.getBoundingClientRect();
+  m.style.left = Math.max(6, Math.min(innerWidth - m.offsetWidth - 6, r.left)) + 'px';
+  m.style.top = (r.bottom + 6) + 'px';
+}
+document.addEventListener('pointerdown', e => { if (popEl && !popEl.contains(e.target) && !e.target.closest('#btnAdd,.b-gear')) closePop(); });
+
+$('#btnAdd').onclick = e => showPop(e.currentTarget, function fill(m) {
+  m.innerHTML = '';
+  panels.forEach(p => {
+    if (p.state !== 'closed') return;
+    const b = mk('button', 'item'); b.textContent = '＋ ' + p.def.title;
+    b.onclick = () => { setState(p, 'open'); fill(m); }; m.appendChild(b);
+  });
+  if (!m.children.length) m.appendChild(mk('div', 'empty', 'All panels are open'));
+});
+
+function openSettings(p, anchor) {
+  showPop(anchor, m => {
+    const changed = () => { p.dirty = true; markDirty(); };
+    const row = (label, input) => { const r = mk('div', 'row'); r.append(mk('label', '', label), input); m.appendChild(r); };
+    const item = (label, fn) => { const b = mk('button', 'item'); b.textContent = label; b.onclick = () => { fn(); closePop(); }; m.appendChild(b); };
+    if (p.def.type === 'chart') {
+      const sel = mk('select');
+      for (const v of [10, 30, 60, 120, 300, 600]) sel.add(new Option(v + ' s', v, false, v === p.opts.windowSec));
+      sel.onchange = () => { p.opts.windowSec = +sel.value; changed(); };
+      row('Time window', sel);
+    }
+    if (p.def.type === 'gauge') {
+      for (const [l, k] of [['Min', 'min'], ['Max', 'max']]) {
+        const inp = mk('input'); inp.type = 'number'; inp.value = p.opts[k];
+        inp.onchange = () => { p.opts[k] = +inp.value; changed(); };
+        row(l, inp);
+      }
+    }
+    if (p.def.type === 'track') {
+      const cb = mk('input'); cb.type = 'checkbox'; cb.checked = p.opts.colorBySpeed;
+      cb.onchange = () => { p.opts.colorBySpeed = cb.checked; changed(); };
+      row('Color by speed', cb);
+      item('Clear trail', trackClear);
+    }
+    item('Reset size & position', () => { fitMode = false; resetRect(p); markDirty(); });
+    item('Minimize', () => setState(p, 'min'));
+    item('Close', () => setState(p, 'closed'));
+  });
+}
+
+/* ---------- top bar ---------- */
+$('#btnPause').onclick = e => {
+  paused = !paused; frozenT = tNow; e.currentTarget.textContent = paused ? 'Resume' : 'Pause'; gDirty = true;
+};
+$('#btnSave').onclick = commitSave;
+$('#btnFit').onclick = fitGrid;
+$('#btnReset').onclick = () => {
+  fitMode = true;
+  try { localStorage.removeItem(CONFIG.storageKey); } catch (e) {}
+  panels.forEach(p => {
+    resetRect(p); p.hidden.clear(); p.opts = defaultOpts(p.def);
+    p.rows.forEach(r => r.classList.remove('off'));
+    applyState(p, defaultState(p.def));
+  });
+  renderChrome(); markDirty();
+};
+$('#session').addEventListener('change', markDirty);
+document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); commitSave(); } });
+addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+let rzT = null;
+addEventListener('resize', () => {
+  clearTimeout(rzT);
+  rzT = setTimeout(() => { if (fitMode) panels.forEach(resetRect); }, 120);
+});
+
+/* ======================================================================
+   render loop (~30 fps) + polling
+   ====================================================================== */
+let lastFrame = 0;
+function frame(ts) {
+  requestAnimationFrame(frame);
+  if (ts - lastFrame < 33) return;
+  lastFrame = ts;
+  panels.forEach(p => {
+    if (p.state !== 'open' || !(gDirty || p.dirty)) return;
+    DRAW[p.def.type](p);
+    p.rows.forEach((row, i) => {
+      const s = p.def.series[i], v = latest[s.key];
+      row.lastChild.textContent = v == null ? '–' : fmt(v) + (s.unit ? ' ' + s.unit : '');
+    });
+    p.dirty = false;
+  });
+  gDirty = false;
+}
+
+function setStatus(kind, text) { const s = $('#status'); s.className = 'pill ' + kind; s.textContent = text; }
+
+/* ---------- JSON import ----------
+   Accepts: an array of samples, { samples: [...] }, a single sample object,
+   or newline-delimited JSON (one sample per line). Samples without `t` are
+   spaced CONFIG.pollMs apart. */
+let imported = false;
+
+function parseImport(text) {
+  try { return JSON.parse(text); }
+  catch (e) { return text.split(/\r?\n/).filter(l => l.trim()).map(l => JSON.parse(l)); }
+}
+
+function importSamples(data, name) {
+  let list = Array.isArray(data) ? data : Array.isArray(data?.samples) ? data.samples : [data];
+  list = list.filter(s => s && typeof s === 'object');
+  if (!list.length) throw new Error('no samples');
+  imported = true;
+  clearData();
+  list.forEach((s, i) => push(typeof s.t === 'number' ? s : { ...s, t: i * CONFIG.pollMs / 1000 }));
+  frozenT = tNow;
+  $('#btnLive').hidden = false;
+  setStatus('', 'file: ' + name + ' (' + list.length + ')');
+}
+
+$('#btnImport').onclick = () => $('#fileImport').click();
+$('#fileImport').onchange = e => {
+  const f = e.target.files[0]; e.target.value = '';
+  if (!f) return;
+  f.text()
+    .then(txt => importSamples(parseImport(txt), f.name))
+    .catch(err => { setStatus('error', 'import failed'); alert('Could not import ' + f.name + ':\n' + err.message); });
+};
+$('#btnLive').onclick = e => {
+  imported = false; clearData(); e.currentTarget.hidden = true;
+  setStatus('', 'connecting…');
+};
+
+function poll() {
+  if (imported) return setTimeout(poll, CONFIG.pollMs);
+  fetch(CONFIG.url, { cache: 'no-store' })
+    .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(d => { if (imported) return; push(d); setStatus('live', 'live'); })
+    .catch(() => { if (!imported) setStatus('error', 'no data'); })
+    .finally(() => setTimeout(poll, CONFIG.pollMs));
+}
+
+/* ======================================================================
+   boot
+   ====================================================================== */
+let saved = null;
+try { saved = JSON.parse(localStorage.getItem(CONFIG.storageKey)); } catch (e) {}
+if (saved?.session) $('#session').value = saved.session;
+fitMode = saved ? saved.fit !== false : true;
+PANELS.forEach(def => createPanel(def, saved?.panels?.[def.id]));
+renderChrome();
+requestAnimationFrame(frame);
+poll();
+</script>
+</body>
+</html>
